@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>개미 군집 최적화 시각화</title>
+    <style>
+        canvas {
+            border: 1px solid black;
+            display: block;
+            margin: 20px auto;
+        }
+        body {
+            text-align: center;
+        }
+        #process {
+            font-size: 1.2em;
+            margin-top: 20px;
+        }
+        #legend {
+            font-size: 1em;
+            margin-top: 10px;
+        }
+        .color-box {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            margin-right: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>개미 군집 최적화 시각화</h1>
+    <canvas id="canvas" width="800" height="600"></canvas>
+    <div id="process">초기화 중...</div>
+    <br>
+    <div id="legend">
+        <div><span class="color-box" style="background-color: black;"></span>노드</div>
+        <div><span class="color-box" style="background-color: orange;"></span>초기 간선</div>
+        <div><span class="color-box" style="background-color: blue;"></span>개미 경로</div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const processDiv = document.getElementById('process');
+
+        const nodes = [
+            { x: 100, y: 300, label: 'A' },
+            { x: 300, y: 100, label: 'B' },
+            { x: 500, y: 100, label: 'C' },
+            { x: 500, y: 500, label: 'D' },
+            { x: 300, y: 500, label: 'E' }
+        ];
+
+        const edges = [
+            [0, 1], [0, 2], [0, 3], [0, 4],
+            [1, 2], [1, 3], [1, 4],
+            [2, 3], [2, 4],
+            [3, 4]
+        ];
+
+        const numAnts = 10;
+        const pheromones = edges.map(() => 1);
+        const evaporationRate = 0.5;
+        const alpha = 1; // Influence of pheromone
+        const beta = 2; // Influence of distance
+
+        function drawGraph() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw edges
+            ctx.strokeStyle = 'orange';
+            edges.forEach((edge, index) => {
+                const [from, to] = edge;
+                ctx.beginPath();
+                ctx.moveTo(nodes[from].x, nodes[from].y);
+                ctx.lineTo(nodes[to].x, nodes[to].y);
+                ctx.stroke();
+            });
+
+            // Draw nodes
+            nodes.forEach(node => {
+                ctx.fillStyle = 'black';
+                ctx.beginPath();
+                ctx.arc(node.x, node.y, 10, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = 'black';
+                ctx.fillText(node.label, node.x - 15, node.y - 15);
+            });
+        }
+
+        function distance(a, b) {
+            const dx = nodes[a].x - nodes[b].x;
+            const dy = nodes[a].y - nodes[b].y;
+            return Math.sqrt(dx * dx + dy * dy);
+        }
+
+        function selectNextNode(currentNode, visited) {
+            const probabilities = edges
+                .map((edge, index) => {
+                    const [from, to] = edge;
+                    if (from === currentNode && !visited[to]) {
+                        const dist = distance(from, to);
+                        return Math.pow(pheromones[index], alpha) * Math.pow(1 / dist, beta);
+                    }
+                    if (to === currentNode && !visited[from]) {
+                        const dist = distance(to, from);
+                        return Math.pow(pheromones[index], alpha) * Math.pow(1 / dist, beta);
+                    }
+                    return 0;
+                });
+
+            const total = probabilities.reduce((a, b) => a + b, 0);
+            const normalized = probabilities.map(p => p / total);
+
+            let r = Math.random();
+            for (let i = 0; i < normalized.length; i++) {
+                if (r < normalized[i]) {
+                    return edges[i][0] === currentNode ? edges[i][1] : edges[i][0];
+                }
+                r -= normalized[i];
+            }
+
+            return null;
+        }
+
+        function updatePheromones(paths, lengths) {
+            processDiv.textContent = "페로몬 업데이트 중...";
+            for (let i = 0; i < pheromones.length; i++) {
+                pheromones[i] *= evaporationRate;
+            }
+
+            paths.forEach((path, index) => {
+                const length = lengths[index];
+                path.forEach((edge, idx) => {
+                    const from = nodes.findIndex(node => node.label === edge[0]);
+                    const to = nodes.findIndex(node => node.label === edge[1]);
+                    const pheromoneIndex = edges.findIndex(e => (e[0] === from && e[1] === to) || (e[0] === to && e[1] === from));
+                    if (pheromoneIndex >= 0) {
+                        pheromones[pheromoneIndex] += 1 / length;
+                    }
+                });
+            });
+        }
+
+        function runAntColonyOptimization() {
+            processDiv.textContent = "개미 이동 중...";
+            const paths = [];
+            const lengths = [];
+
+            for (let i = 0; i < numAnts; i++) {
+                let currentNode = 0; // Start at node A
+                const path = [];
+                const visited = new Array(nodes.length).fill(false);
+                visited[currentNode] = true;
+
+                for (let j = 0; j < nodes.length - 1; j++) {
+                    const nextNode = selectNextNode(currentNode, visited);
+                    if (nextNode === null) break;
+                    path.push([nodes[currentNode].label, nodes[nextNode].label]);
+                    visited[nextNode] = true;
+                    currentNode = nextNode;
+                }
+
+                if (path.length === nodes.length - 1) {
+                    const length = path.reduce((sum, edge) => {
+                        const from = nodes.findIndex(node => node.label === edge[0]);
+                        const to = nodes.findIndex(node => node.label === edge[1]);
+                        return sum + distance(from, to);
+                    }, 0);
+                    paths.push(path);
+                    lengths.push(length);
+                }
+            }
+
+            updatePheromones(paths, lengths);
+
+            drawGraph();
+            paths.forEach(path => {
+                path.forEach(edge => {
+                    const from = nodes.findIndex(node => node.label === edge[0]);
+                    const to = nodes.findIndex(node => node.label === edge[1]);
+                    ctx.strokeStyle = 'blue';
+                    ctx.beginPath();
+                    ctx.moveTo(nodes[from].x, nodes[from].y);
+                    ctx.lineTo(nodes[to].x, nodes[to].y);
+                    ctx.stroke();
+                });
+            });
+
+            processDiv.textContent = "최단 경로 찾기 완료";
+        }
+
+        drawGraph();
+        setInterval(runAntColonyOptimization, 3000);
+    </script>
+</body>
+</html>
